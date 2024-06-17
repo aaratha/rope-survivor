@@ -6,8 +6,8 @@ use macroquad::rand::gen_range;
 // cargo build --release --target wasm32-unknown-unknown
 // basic-http-server target/wasm32-unknown-unknown/release
 // zip target/wasm32-unknown-unknown/release.zip -j target/wasm32-unknown-unknown/release/*
-// butler push target/wasm32-unknown-unknown/release.zip aaratha/rope:html5
-// butler status aaratha/rope:html5
+// butler push target/wasm32-unknown-unknown/release.zip aaratha/rope-survivor:html5
+// butler status aaratha/rope-survivor:html5
 
 const ROPE_THICKNESS: f32 = 2.0;
 const ROPE_BALL_RADIUS: f32 = 7.0;
@@ -20,7 +20,7 @@ const FRICTION: f32 = 0.98;
 const SUBSTEPS: usize = 5;
 const LERP_FACTOR: f32 = 0.5;
 
-const ENEMY_SPEED: f32 = 7.0;
+const ENEMY_SPEED: f32 = 4.0;
 const ENEMY_SPAWN_INTERVAL: f32 = 2.0; // in seconds
 const ENEMY_RADIUS: f32 = 10.0;
 
@@ -393,6 +393,15 @@ async fn main() {
         if game_over {
             // Handle game over screen
             clear_background(BLACK);
+            set_default_camera();
+
+            // Draw the canvas to the screen
+            draw_texture(
+                &canvas.texture,
+                (screen_width() - CANVAS_WIDTH) / 2.0,
+                (screen_height() - CANVAS_HEIGHT) / 2.0,
+                WHITE,
+            );
             draw_text(
                 &format!("Game Over!"),
                 CANVAS_WIDTH / 2. - 85.,
