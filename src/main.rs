@@ -1,3 +1,4 @@
+use macroquad::camera::{set_camera, Camera2D};
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
 
@@ -12,7 +13,7 @@ const ROPE_THICKNESS: f32 = 2.0;
 const ROPE_BALL_RADIUS: f32 = 7.0;
 const ROPE_COLOR: Color = Color::new(0.7, 0.8, 1.0, 1.0);
 const SEGMENT_LENGTH: f32 = 10.0;
-const CONSTRAINT_ITERATIONS: usize = 8;
+const CONSTRAINT_ITERATIONS: usize = 5;
 
 const TIME_STEP: f32 = 0.016;
 const FRICTION: f32 = 0.98;
@@ -34,6 +35,7 @@ const BORDER_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.0); // Adjust border col
 struct Frame {
     width: f32,
     height: f32,
+    mouse_held: bool,
 }
 
 impl Frame {
@@ -41,6 +43,7 @@ impl Frame {
         Self {
             width: screen_width(),
             height: screen_height(),
+            mouse_held: false,
         }
     }
 
@@ -125,13 +128,12 @@ impl Rope {
             particles,
             thickness: ROPE_THICKNESS,
             ball_radius: ROPE_BALL_RADIUS,
-            constraint_strength: 0.5,
+            constraint_strength: 0.3,
         }
     }
 
     fn update(&mut self, target: Vec2) {
         self.particles[0].position = target;
-
         for _ in 0..CONSTRAINT_ITERATIONS {
             for i in 0..self.particles.len() - 1 {
                 let particle_a = self.particles[i];
@@ -151,13 +153,6 @@ impl Rope {
         for i in 1..self.particles.len() {
             self.particles[i].update();
         }
-    }
-
-    fn extend(&mut self) {
-        let last_particle = self.particles.last().unwrap();
-        let direction = last_particle.position - self.particles[self.particles.len() - 2].position;
-        let new_particle = Particle::new(last_particle.position + direction);
-        self.particles.push(new_particle);
     }
 
     fn draw(&self) {
@@ -371,6 +366,16 @@ fn is_in_frame(particle: &Particle, frame: Frame) -> bool {
         && y <= (screen_height() + frame.height) / 2.
 }
 
+fn update_camera(target: Vec2, lerp_factor: f32) {
+    let camera_position = scene::camera_pos();
+    let new_camera_position = camera_position + (target - camera_position) * lerp_factor;
+    set_camera(&Camera2D {
+        target: new_camera_position,
+        zoom: vec2(1., screen_width() / screen_height()) * 0.002,
+        ..Camera2D::default()
+    });
+}
+
 #[macroquad::main("Rope Simulation")]
 async fn main() {
     let mut game_over = false;
@@ -380,12 +385,11 @@ async fn main() {
     let mut last_spawn_time = get_time();
     let mut last_point_spawn_time = get_time();
     let mut score = 0;
-    let mut last_extended_score = 0;
     let mut frame = Frame::new();
+    let mut target = Vec2::ZERO;
     // let mut fps_counter = FpsCounter::new();
 
     loop {
-
         // fps_counter.update();
         // fps_counter.draw();
 
@@ -420,7 +424,6 @@ async fn main() {
                     score = 0;
                     last_spawn_time = get_time();
                     last_point_spawn_time = get_time();
-                    last_extended_score = 0;
                 }
             }
 
@@ -445,8 +448,15 @@ async fn main() {
         }
 
         let mouse_position: Vec2 = mouse_position().into();
-        let target = rope.particles[0].position
-            + (mouse_position - rope.particles[0].position) * LERP_FACTOR;
+
+        if is_mouse_button_down(MouseButton::Left) {
+            frame.mouse_held = true;
+            target = rope.particles[0].position
+                + (mouse_position - rope.particles[0].position) * LERP_FACTOR;
+        } else {
+            frame.mouse_held = false;
+            target = rope.particles[0].position;
+        }
 
         for _ in 0..SUBSTEPS {
             rope.update(target);
@@ -504,15 +514,10 @@ async fn main() {
             BORDER_COLOR,
         );
 
-        if score % 5 == 0 && score != last_extended_score {
-            rope.extend();
-            last_extended_score = score;
-            if rope.constraint_strength < 1.5 {
-                rope.constraint_strength += 0.1;
-            }
-        }
         frame.update();
+        set_default_camera();
 
+        // update_camera(rope.particles[0].position, LERP_FACTOR);
         next_frame().await;
     }
 }
