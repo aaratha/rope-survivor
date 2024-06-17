@@ -31,6 +31,22 @@ const POINT_RADIUS: f32 = 5.0;
 const BORDER_THICKNESS: f32 = 5.0;
 const BORDER_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.0); // Adjust border color as needed
 
+const CANVAS_WIDTH: f32 = 400.0; // Set the canvas width based on 16:9 aspect ratio
+const CANVAS_HEIGHT: f32 = CANVAS_WIDTH * 16.0 / 9.0; // Calculate canvas height
+
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Window Conf".to_owned(),
+        window_height: CANVAS_HEIGHT as i32,
+        window_width: CANVAS_WIDTH as i32,
+        platform: miniquad::conf::Platform {
+            linux_backend: miniquad::conf::LinuxBackend::WaylandOnly,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Frame {
     width: f32,
@@ -216,9 +232,6 @@ impl Enemy {
             self.particle.position += step;
         }
         self.particle.update();
-        if !is_in_frame(&self.particle, frame) {
-            self.active = false;
-        }
     }
 
     fn draw(&self) {
@@ -345,7 +358,7 @@ fn is_in_frame(particle: &Particle, frame: Frame) -> bool {
         && y <= (screen_height() + frame.height) / 2.
 }
 
-#[macroquad::main("Rope Simulation")]
+#[macroquad::main(window_conf)]
 async fn main() {
     let mut game_over = false;
     let mut rope = Rope::new(vec2(0.0, 100.0), 10);
@@ -361,7 +374,7 @@ async fn main() {
 
     // let mut fps_counter = FpsCounter::new();
 
-    let canvas = render_target(frame.width as u32, frame.height as u32);
+    let canvas = render_target(CANVAS_WIDTH as u32, CANVAS_HEIGHT as u32);
     canvas.texture.set_filter(FilterMode::Nearest);
 
     loop {
@@ -372,33 +385,34 @@ async fn main() {
         set_camera(&Camera2D {
             target: target,
             render_target: Some(canvas.clone()), // Clone the canvas to avoid move error
-            zoom: Vec2::new(1.0, screen_width() / screen_height()) * 0.003,
+            zoom: Vec2::new(CANVAS_HEIGHT / CANVAS_WIDTH, 1.0) * 0.003,
             ..Default::default()
         });
 
         clear_background(BLACK);
         if game_over {
+            // Handle game over screen
             clear_background(BLACK);
             draw_text(
                 &format!("Game Over!"),
-                screen_width() / 2. - 85.,
-                screen_height() / 2. - 50.,
+                CANVAS_WIDTH / 2. - 85.,
+                CANVAS_HEIGHT / 2. - 50.,
                 40.,
                 WHITE,
             );
             draw_text(
                 &format!("Your score is: {}", score),
-                screen_width() / 2. - 140.,
-                screen_height() / 2. - 20.,
+                CANVAS_WIDTH / 2. - 140.,
+                CANVAS_HEIGHT / 2. - 20.,
                 40.,
                 WHITE,
             );
             if is_mouse_button_pressed(MouseButton::Left) {
                 let mouse_position: Vec2 = mouse_position().into();
-                if mouse_position.x >= screen_width() / 2. - 100.
-                    && mouse_position.x <= screen_width() / 2. + 100.
-                    && mouse_position.y >= screen_height() / 2.
-                    && mouse_position.y <= screen_height() / 2. + 50.
+                if mouse_position.x >= CANVAS_WIDTH / 2. - 100.
+                    && mouse_position.x <= CANVAS_WIDTH / 2. + 100.
+                    && mouse_position.y >= CANVAS_HEIGHT / 2.
+                    && mouse_position.y <= CANVAS_HEIGHT / 2. + 50.
                 {
                     // Reset the game
                     game_over = false;
@@ -413,16 +427,16 @@ async fn main() {
 
             // Draw replay button
             draw_rectangle(
-                screen_width() / 2. - 100.,
-                screen_height() / 2.,
+                CANVAS_WIDTH / 2. - 100.,
+                CANVAS_HEIGHT / 2.,
                 200.,
                 50.,
                 BLUE,
             );
             draw_text(
                 "Replay",
-                screen_width() / 2. - 50.,
-                screen_height() / 2. + 30.,
+                CANVAS_WIDTH / 2. - 50.,
+                CANVAS_HEIGHT / 2. + 30.,
                 30.,
                 WHITE,
             );
@@ -500,23 +514,22 @@ async fn main() {
         // Draw the canvas to the screen
         draw_texture(
             &canvas.texture,
-            (screen_width() - frame.width) / 2.0,
-            (screen_height() - frame.height) / 2.0,
+            (screen_width() - CANVAS_WIDTH) / 2.0,
+            (screen_height() - CANVAS_HEIGHT) / 2.0,
             WHITE,
         );
 
         draw_text(&format!("Score: {}", score), 20.0, 20.0, 30.0, WHITE);
 
         draw_rectangle_lines(
-            (screen_width() - frame.width) / 2.,
-            (screen_height() - frame.height) / 2.,
+            (screen_width() - CANVAS_WIDTH) / 2.0,
+            (screen_height() - CANVAS_HEIGHT) / 2.0,
             frame.width,
             frame.height,
             BORDER_THICKNESS,
             BORDER_COLOR,
         );
 
-        // update_camera(rope.particles[0].position, LERP_FACTOR);
         next_frame().await;
     }
 }
