@@ -18,11 +18,11 @@ const CONSTRAINT_STRENGTH: f32 = 0.3;
 
 const TIME_STEP: f32 = 0.016;
 const FRICTION: f32 = 0.98;
-const ROPE_FRICTION: f32 = 0.99;
+const ROPE_FRICTION: f32 = 0.986;
 const SUBSTEPS: usize = 5;
 const LERP_FACTOR: f32 = 0.5;
 
-const ENEMY_SPEED: f32 = 4.0;
+const ENEMY_SPEED: f32 = 2.5;
 const ENEMY_SPAWN_INTERVAL: f32 = 2.0; // in seconds
 const ENEMY_RADIUS: f32 = 10.0;
 
