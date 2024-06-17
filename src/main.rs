@@ -188,36 +188,21 @@ struct Enemy {
 }
 
 impl Enemy {
-    fn new(frame: Frame) -> Self {
-        let pos = if gen_range(0., 1.) > 0.5 {
-            // Spawn on the left or right side of the rectangle
-            Vec2::new(
-                if gen_range(0., 1.) > 0.5 {
-                    (screen_width() - frame.width) / 2.
-                } else {
-                    (screen_width() + frame.width) / 2.
-                },
-                rand::gen_range(
-                    (screen_height() - frame.height) / 2.,
-                    (screen_height() + frame.height) / 2.,
-                ),
-            )
+    fn new(frame: Frame, target: Vec2) -> Self {
+        let spawn_x = if rand::gen_range(0.0, 1.0) > 0.5 {
+            gen_range(target.x - frame.width / 2.0, target.x)
         } else {
-            // Spawn on the top or bottom side of the rectangle
-            Vec2::new(
-                rand::gen_range(
-                    (screen_width() - frame.width) / 2.,
-                    (screen_width() + frame.width) / 2.,
-                ),
-                if gen_range(0., 1.) > 0.5 {
-                    (screen_height() - frame.height) / 2.
-                } else {
-                    (screen_height() + frame.height) / 2.
-                },
-            )
+            gen_range(target.x, target.x + frame.width / 2.0)
         };
+
+        let spawn_y = if rand::gen_range(0.0, 1.0) > 0.5 {
+            gen_range(target.y - frame.height / 2.0, target.y)
+        } else {
+            gen_range(target.y, target.y + frame.height / 2.0)
+        };
+
         Self {
-            particle: Particle::new(pos),
+            particle: Particle::new(Vec2::new(spawn_x, spawn_y)),
             active: true,
             radius: ENEMY_RADIUS,
         }
@@ -255,16 +240,10 @@ struct Point {
 }
 
 impl Point {
-    fn new(frame: Frame) -> Self {
+    fn new(frame: Frame, target: Vec2) -> Self {
         let pos = Vec2::new(
-            rand::gen_range(
-                (screen_width() - frame.width) / 2.,
-                (screen_width() + frame.width) / 2.,
-            ),
-            rand::gen_range(
-                (screen_height() - frame.height) / 2.,
-                (screen_height() + frame.height) / 2.,
-            ),
+            gen_range(target.x - frame.width / 2.0, target.x + frame.width / 2.0),
+            gen_range(target.y - frame.height / 2.0, target.y + frame.height / 2.0),
         );
         Self {
             position: pos,
@@ -366,16 +345,6 @@ fn is_in_frame(particle: &Particle, frame: Frame) -> bool {
         && y <= (screen_height() + frame.height) / 2.
 }
 
-fn update_camera(target: Vec2, lerp_factor: f32) {
-    let camera_position = scene::camera_pos();
-    let new_camera_position = camera_position + (target - camera_position) * lerp_factor;
-    set_camera(&Camera2D {
-        target: new_camera_position,
-        zoom: vec2(1., screen_width() / screen_height()) * 0.002,
-        ..Camera2D::default()
-    });
-}
-
 #[macroquad::main("Rope Simulation")]
 async fn main() {
     let mut game_over = false;
@@ -387,12 +356,27 @@ async fn main() {
     let mut score = 0;
     let mut frame = Frame::new();
     let mut target = Vec2::ZERO;
+    let mut last_target = Vec2::ZERO; // Track the last target position
+    let mut start_drag_position = Vec2::ZERO;
+
     // let mut fps_counter = FpsCounter::new();
+
+    let canvas = render_target(frame.width as u32, frame.height as u32);
+    canvas.texture.set_filter(FilterMode::Nearest);
 
     loop {
         // fps_counter.update();
         // fps_counter.draw();
+        frame.update();
 
+        set_camera(&Camera2D {
+            target: target,
+            render_target: Some(canvas.clone()), // Clone the canvas to avoid move error
+            zoom: Vec2::new(1.0, screen_width() / screen_height()) * 0.003,
+            ..Default::default()
+        });
+
+        clear_background(BLACK);
         if game_over {
             clear_background(BLACK);
             draw_text(
@@ -448,14 +432,23 @@ async fn main() {
         }
 
         let mouse_position: Vec2 = mouse_position().into();
-
         if is_mouse_button_down(MouseButton::Left) {
+            if !frame.mouse_held {
+                start_drag_position = mouse_position;
+                last_target = target;
+            }
             frame.mouse_held = true;
-            target = rope.particles[0].position
-                + (mouse_position - rope.particles[0].position) * LERP_FACTOR;
+
+            // Calculate the drag vector relative to start_drag_position
+            let drag_vector = (mouse_position - start_drag_position) * 1.5;
+
+            // Update target based on drag direction and magnitude relative to last_target
+            target = last_target + drag_vector;
+
+            // Smoothly move target towards last_target using LERP
+            target += (last_target - target) * LERP_FACTOR;
         } else {
             frame.mouse_held = false;
-            target = rope.particles[0].position;
         }
 
         for _ in 0..SUBSTEPS {
@@ -471,14 +464,14 @@ async fn main() {
         }
 
         if get_time() - last_spawn_time >= ENEMY_SPAWN_INTERVAL as f64 {
-            enemies.push(Enemy::new(frame));
+            enemies.push(Enemy::new(frame, target));
             last_spawn_time = get_time();
         }
 
         if get_time() - last_point_spawn_time >= POINT_SPAWN_INTERVAL as f64
             && points.len() < MAX_POINTS
         {
-            points.push(Point::new(frame));
+            points.push(Point::new(frame, target));
             last_point_spawn_time = get_time();
         }
 
@@ -502,6 +495,15 @@ async fn main() {
         for point in &points {
             point.draw();
         }
+        set_default_camera();
+
+        // Draw the canvas to the screen
+        draw_texture(
+            &canvas.texture,
+            (screen_width() - frame.width) / 2.0,
+            (screen_height() - frame.height) / 2.0,
+            WHITE,
+        );
 
         draw_text(&format!("Score: {}", score), 20.0, 20.0, 30.0, WHITE);
 
@@ -513,9 +515,6 @@ async fn main() {
             BORDER_THICKNESS,
             BORDER_COLOR,
         );
-
-        frame.update();
-        set_default_camera();
 
         // update_camera(rope.particles[0].position, LERP_FACTOR);
         next_frame().await;
