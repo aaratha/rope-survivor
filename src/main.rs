@@ -14,7 +14,7 @@ const ROPE_BALL_RADIUS: f32 = 7.0;
 const ROPE_COLOR: Color = Color::new(0.7, 0.8, 1.0, 1.0);
 const SEGMENT_LENGTH: f32 = 10.0;
 const CONSTRAINT_ITERATIONS: usize = 5;
-const CONSTRAINT_STRENGTH: f32 = 0.3;
+const CONSTRAINT_STRENGTH: f32 = 0.1;
 
 const TIME_STEP: f32 = 0.016;
 const FRICTION: f32 = 0.98;
@@ -22,7 +22,7 @@ const ROPE_FRICTION: f32 = 0.986;
 const SUBSTEPS: usize = 5;
 const LERP_FACTOR: f32 = 0.5;
 
-const ENEMY_SPEED: f32 = 2.5;
+const ENEMY_SPEED: f32 = 2.;
 const ENEMY_SPAWN_INTERVAL: f32 = 2.0; // in seconds
 const ENEMY_RADIUS: f32 = 10.0;
 
@@ -36,7 +36,7 @@ const BORDER_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.0); // Adjust border col
 const CANVAS_WIDTH: f32 = 400.0; // Set the canvas width based on 16:9 aspect ratio
 const CANVAS_HEIGHT: f32 = CANVAS_WIDTH * 16.0 / 9.0; // Calculate canvas height
 
-const DRAG_SENSITIVITY: f32 = 1.8;
+const DRAG_SENSITIVITY: f32 = 1.9;
 
 fn window_conf() -> Conf {
     Conf {
@@ -375,6 +375,7 @@ async fn main() {
     let mut frame = Frame::new();
     let mut target = Vec2::ZERO;
     let mut last_target = Vec2::ZERO; // Track the last target position
+    let mut camera_target = Vec2::ZERO;
     let mut start_drag_position = Vec2::ZERO;
 
     // let mut fps_counter = FpsCounter::new();
@@ -387,8 +388,11 @@ async fn main() {
         // fps_counter.draw();
         frame.update();
 
+        // camera_target = update_camera(frame, target);
+        camera_target = camera_target.lerp(target, 0.1);
+
         set_camera(&Camera2D {
-            target: target,
+            target: camera_target,
             render_target: Some(canvas.clone()), // Clone the canvas to avoid move error
             zoom: Vec2::new(CANVAS_HEIGHT / CANVAS_WIDTH, 1.0) * 0.003,
             ..Default::default()
