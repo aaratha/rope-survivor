@@ -16,7 +16,7 @@ const SEGMENT_LENGTH: f32 = 10.0;
 const CONSTRAINT_ITERATIONS: usize = 5;
 
 const TIME_STEP: f32 = 0.016;
-const FRICTION: f32 = 0.98;
+const FRICTION: f32 = 0.99;
 const SUBSTEPS: usize = 5;
 const LERP_FACTOR: f32 = 0.5;
 
@@ -33,6 +33,8 @@ const BORDER_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.0); // Adjust border col
 
 const CANVAS_WIDTH: f32 = 400.0; // Set the canvas width based on 16:9 aspect ratio
 const CANVAS_HEIGHT: f32 = CANVAS_WIDTH * 16.0 / 9.0; // Calculate canvas height
+
+const DRAG_SENSITIVITY: f32 = 2.;
 
 fn window_conf() -> Conf {
     Conf {
@@ -463,7 +465,7 @@ async fn main() {
             frame.mouse_held = true;
 
             // Calculate the drag vector relative to start_drag_position
-            let drag_vector = (mouse_position - start_drag_position) * 1.5;
+            let drag_vector = (mouse_position - start_drag_position) * DRAG_SENSITIVITY;
 
             // Update target based on drag direction and magnitude relative to last_target
             target = last_target + drag_vector;
