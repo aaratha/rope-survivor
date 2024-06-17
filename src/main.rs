@@ -14,9 +14,11 @@ const ROPE_BALL_RADIUS: f32 = 7.0;
 const ROPE_COLOR: Color = Color::new(0.7, 0.8, 1.0, 1.0);
 const SEGMENT_LENGTH: f32 = 10.0;
 const CONSTRAINT_ITERATIONS: usize = 5;
+const CONSTRAINT_STRENGTH: f32 = 0.3;
 
 const TIME_STEP: f32 = 0.016;
-const FRICTION: f32 = 0.99;
+const FRICTION: f32 = 0.98;
+const ROPE_FRICTION: f32 = 0.99;
 const SUBSTEPS: usize = 5;
 const LERP_FACTOR: f32 = 0.5;
 
@@ -34,7 +36,7 @@ const BORDER_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.0); // Adjust border col
 const CANVAS_WIDTH: f32 = 400.0; // Set the canvas width based on 16:9 aspect ratio
 const CANVAS_HEIGHT: f32 = CANVAS_WIDTH * 16.0 / 9.0; // Calculate canvas height
 
-const DRAG_SENSITIVITY: f32 = 2.;
+const DRAG_SENSITIVITY: f32 = 1.8;
 
 fn window_conf() -> Conf {
     Conf {
@@ -141,12 +143,13 @@ impl Rope {
         let mut particles = Vec::with_capacity(num_particles);
         for i in 0..num_particles {
             particles.push(Particle::new(start + vec2(i as f32 * SEGMENT_LENGTH, 0.0)));
+            particles[i].friction = ROPE_FRICTION;
         }
         Self {
             particles,
             thickness: ROPE_THICKNESS,
             ball_radius: ROPE_BALL_RADIUS,
-            constraint_strength: 0.3,
+            constraint_strength: CONSTRAINT_STRENGTH,
         }
     }
 
