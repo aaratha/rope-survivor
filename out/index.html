@@ -1,7 +1,32 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 
-<body style="margin: 0px;">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Bevy WebGL Application</title>
+  <style>
+    /* Ensure the canvas fills the entire viewport */
+    html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+  </style>
+</head>
+
+<body>
+  <!-- Embed the Bevy application -->
   <script type="module">
     import init from './sketch.js'
 

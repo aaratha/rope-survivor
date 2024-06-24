@@ -1,6 +1,7 @@
 use bevy::{
     input::{
         mouse::{MouseButtonInput, MouseMotion},
+        touch::{TouchInput, TouchPhase},
         ButtonState,
     },
     math::vec2,
@@ -27,13 +28,13 @@ const ROPE_COLOR: Color = Color::rgba(0.7, 0.8, 1.0, 1.0);
 const SEGMENT_LENGTH: f32 = 10.0;
 const NUM_PARTICLES: usize = 10;
 const CONSTRAINT_ITERATIONS: usize = 8;
-const CONSTRAINT_STRENGTH: f32 = 0.7;
+const CONSTRAINT_STRENGTH: f32 = 2.0;
 
 const TIME_STEP: f32 = 0.016;
 const FRICTION: f32 = 0.98;
 const ROPE_FRICTION: f32 = 0.98;
 const SUBSTEPS: usize = 5;
-const LERP_FACTOR: f32 = 0.2;
+const LERP_FACTOR: f32 = 0.4;
 
 const ENEMY_SPEED: f32 = 2.;
 const ENEMY_SPAWN_INTERVAL: f32 = 2.0; // in seconds
@@ -72,7 +73,8 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, (update_rope_particles, camera_controller))
+        .add_systems(FixedUpdate, (update_rope_particles))
+        .add_systems(Update, camera_controller)
         .run();
 }
 
@@ -262,29 +264,52 @@ fn setup(
 fn camera_controller(
     mut mousebtn_evr: EventReader<MouseButtonInput>,
     mut mousemv_evr: EventReader<MouseMotion>,
+    mut touch_evr: EventReader<TouchInput>,
     mut query: Query<&mut Transform, With<Camera>>,
+    mut is_pressed: Local<bool>,
+    mut last_touch_position: Local<Option<Vec2>>,
 ) {
-    // Track if the left mouse button is pressed
-    static mut IS_PRESSED: bool = false;
-
     // Handle mouse button events
     for ev in mousebtn_evr.read() {
         if ev.button == MouseButton::Left {
-            unsafe {
-                IS_PRESSED = ev.state == ButtonState::Pressed;
-            }
+            *is_pressed = ev.state == ButtonState::Pressed;
         }
     }
 
     // Handle mouse motion events
     for ev in mousemv_evr.read() {
-        unsafe {
-            if IS_PRESSED {
-                for mut transform in query.iter_mut() {
-                    transform.translation.x -= ev.delta.x * DRAG_SENSITIVITY;
-                    transform.translation.y += ev.delta.y * DRAG_SENSITIVITY;
+        if *is_pressed {
+            for mut transform in query.iter_mut() {
+                transform.translation.x -= ev.delta.x * DRAG_SENSITIVITY;
+                transform.translation.y += ev.delta.y * DRAG_SENSITIVITY;
+            }
+        }
+    }
+
+    // Handle touch events
+    for ev in touch_evr.read() {
+        match ev.phase {
+            TouchPhase::Started => {
+                *is_pressed = true;
+                *last_touch_position = Some(ev.position);
+            }
+            TouchPhase::Moved => {
+                if let Some(last_position) = *last_touch_position {
+                    let delta = ev.position - last_position;
+                    if *is_pressed {
+                        for mut transform in query.iter_mut() {
+                            transform.translation.x -= delta.x * DRAG_SENSITIVITY;
+                            transform.translation.y += delta.y * DRAG_SENSITIVITY;
+                        }
+                    }
+                    *last_touch_position = Some(ev.position);
                 }
             }
+            TouchPhase::Ended | TouchPhase::Canceled => {
+                *is_pressed = false;
+                *last_touch_position = None;
+            }
+            _ => {}
         }
     }
 }
