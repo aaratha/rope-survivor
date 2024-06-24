@@ -11,12 +11,17 @@ use bevy::{
 
 // cargo run --release
 // cargo build --release --target wasm32-unknown-unknown
+// wasm-bindgen --no-typescript --target wasm32-unknown-unknown web --out-dire ./out/ --out-name "sketch" ./target/wasm32-unknown-unknown/release/sketch.wasm
+// basic-http-server out
+// zip out/release.zip -j out/*
+// butler push out/release.zip aaratha/rope-survivor:html5
+
 // basic-http-server target/wasm32-unknown-unknown/release
 // zip target/wasm32-unknown-unknown/release.zip -j target/wasm32-unknown-unknown/release/*
 // butler push target/wasm32-unknown-unknown/release.zip aaratha/rope-survivor:html5
 // butler status aaratha/rope-survivor:html5
 
-const ROPE_THICKNESS: f32 = 2.0;
+const ROPE_THICKNESS: f32 = 4.0;
 const ROPE_BALL_RADIUS: f32 = 7.0;
 const ROPE_COLOR: Color = Color::rgba(0.7, 0.8, 1.0, 1.0);
 const SEGMENT_LENGTH: f32 = 10.0;
@@ -104,14 +109,6 @@ impl Particle {
             radius: ROPE_BALL_RADIUS,
             color: ROPE_COLOR,
         }
-    }
-
-    fn update(&mut self) {
-        let mut velocity = self.position - self.last_position;
-        velocity *= self.friction; // Apply friction to the velocity
-        self.last_position = self.position;
-        self.position += velocity;
-        self.acceleration = Vec2::ZERO; // Reset acceleration
     }
 }
 
@@ -224,21 +221,39 @@ fn setup(
     // Spawn particles as separate entities
     let mut particle_entities = Vec::new();
     for i in 0..NUM_PARTICLES {
-        let entity = commands
-            .spawn(MaterialMesh2dBundle {
-                mesh: Mesh2dHandle(meshes.add(Circle {
-                    radius: ROPE_BALL_RADIUS,
-                })),
-                material: materials.add(ROPE_COLOR),
-                transform: Transform::from_translation(Vec3::new(
-                    i as f32 * SEGMENT_LENGTH,
-                    0.0,
-                    0.0,
-                )),
-                ..Default::default()
-            })
-            .id();
-        particle_entities.push(entity);
+        if i == 0 || i == NUM_PARTICLES - 1 {
+            let entity = commands
+                .spawn(MaterialMesh2dBundle {
+                    mesh: Mesh2dHandle(meshes.add(Circle {
+                        radius: ROPE_BALL_RADIUS,
+                    })),
+                    material: materials.add(ROPE_COLOR),
+                    transform: Transform::from_translation(Vec3::new(
+                        i as f32 * SEGMENT_LENGTH,
+                        0.0,
+                        0.0,
+                    )),
+                    ..Default::default()
+                })
+                .id();
+            particle_entities.push(entity);
+        } else {
+            let entity = commands
+                .spawn(MaterialMesh2dBundle {
+                    mesh: Mesh2dHandle(meshes.add(Circle {
+                        radius: ROPE_THICKNESS,
+                    })),
+                    material: materials.add(ROPE_COLOR),
+                    transform: Transform::from_translation(Vec3::new(
+                        i as f32 * SEGMENT_LENGTH,
+                        0.0,
+                        0.0,
+                    )),
+                    ..Default::default()
+                })
+                .id();
+            particle_entities.push(entity);
+        }
     }
 
     commands.insert_resource(ParticleEntities(particle_entities));
