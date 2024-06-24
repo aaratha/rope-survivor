@@ -1,6 +1,13 @@
-use macroquad::camera::{set_camera, Camera2D};
-use macroquad::prelude::*;
-use macroquad::rand::gen_range;
+use bevy::{
+    input::{
+        mouse::{MouseButtonInput, MouseMotion},
+        ButtonState,
+    },
+    math::vec2,
+    prelude::*,
+    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
+    window::{PresentMode, WindowTheme},
+};
 
 // cargo run --release
 // cargo build --release --target wasm32-unknown-unknown
@@ -11,14 +18,15 @@ use macroquad::rand::gen_range;
 
 const ROPE_THICKNESS: f32 = 2.0;
 const ROPE_BALL_RADIUS: f32 = 7.0;
-const ROPE_COLOR: Color = Color::new(0.7, 0.8, 1.0, 1.0);
+const ROPE_COLOR: Color = Color::rgba(0.7, 0.8, 1.0, 1.0);
 const SEGMENT_LENGTH: f32 = 10.0;
-const CONSTRAINT_ITERATIONS: usize = 5;
-const CONSTRAINT_STRENGTH: f32 = 0.1;
+const NUM_PARTICLES: usize = 10;
+const CONSTRAINT_ITERATIONS: usize = 8;
+const CONSTRAINT_STRENGTH: f32 = 0.7;
 
 const TIME_STEP: f32 = 0.016;
 const FRICTION: f32 = 0.98;
-const ROPE_FRICTION: f32 = 0.99;
+const ROPE_FRICTION: f32 = 0.98;
 const SUBSTEPS: usize = 5;
 const LERP_FACTOR: f32 = 0.2;
 
@@ -31,138 +39,107 @@ const MAX_POINTS: usize = 20;
 const POINT_RADIUS: f32 = 5.0;
 
 const BORDER_THICKNESS: f32 = 5.0;
-const BORDER_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.0); // Adjust border color as needed
+const BORDER_COLOR: Color = Color::rgba(1.0, 1.0, 1.0, 0.0); // Adjust border color as needed
 
 const CANVAS_WIDTH: f32 = 400.0; // Set the canvas width based on 16:9 aspect ratio
 const CANVAS_HEIGHT: f32 = CANVAS_WIDTH * 16.0 / 9.0; // Calculate canvas height
 
 const DRAG_SENSITIVITY: f32 = 1.9;
 
-fn window_conf() -> Conf {
-    Conf {
-        window_title: "Window Conf".to_owned(),
-        window_height: CANVAS_HEIGHT as i32,
-        window_width: CANVAS_WIDTH as i32,
-        platform: miniquad::conf::Platform {
-            linux_backend: miniquad::conf::LinuxBackend::WaylandOnly,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
+fn main() {
+    App::new()
+        .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "I am a window!".into(),
+                name: Some("bevy.app".into()),
+                resolution: (CANVAS_WIDTH, CANVAS_HEIGHT).into(),
+                present_mode: PresentMode::AutoVsync,
+                prevent_default_event_handling: false,
+                window_theme: Some(WindowTheme::Dark),
+                enabled_buttons: bevy::window::EnabledButtons {
+                    maximize: false,
+                    ..Default::default()
+                },
+                visible: true,
+                ..default()
+            }),
+            ..default()
+        }))
+        .add_systems(Startup, setup)
+        .add_systems(FixedUpdate, (update_rope_particles, camera_controller))
+        .run();
 }
 
-#[derive(Clone, Copy)]
-struct Frame {
-    width: f32,
-    height: f32,
-    mouse_held: bool,
+#[derive(Resource)]
+struct CameraEntity {
+    entity: Entity,
 }
 
-impl Frame {
-    fn new() -> Self {
-        Self {
-            width: screen_width(),
-            height: screen_height(),
-            mouse_held: false,
-        }
-    }
+#[derive(Resource)]
+struct ParticleEntities(Vec<Entity>);
 
-    fn update(&mut self) {
-        self.width = screen_width();
-        self.height = screen_height();
-    }
+#[derive(Resource)]
+struct PlayerEntity {
+    entity: Entity,
 }
 
-struct FpsCounter {
-    last_update: f32,
-    fps: f32,
-    fps_text: String,
-}
-
-impl FpsCounter {
-    fn new() -> Self {
-        Self {
-            last_update: 0.0,
-            fps: 0.0,
-            fps_text: String::new(),
-        }
-    }
-
-    fn update(&mut self) {
-        let current_time = get_time();
-        let elapsed_time = current_time - self.last_update as f64;
-
-        if elapsed_time >= 1.0 {
-            self.fps = get_fps() as f32;
-            self.last_update = current_time as f32;
-            self.fps_text = format!("FPS: {:.2}", self.fps);
-        }
-    }
-
-    fn draw(&self) {
-        draw_text(&self.fps_text, screen_width() - 100.0, 20.0, 20.0, WHITE);
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Component, Clone, Copy)]
 struct Particle {
     position: Vec2,
-    old_position: Vec2,
+    last_position: Vec2,
     acceleration: Vec2,
     friction: f32,
+    radius: f32,
+    color: Color,
 }
 
 impl Particle {
     fn new(position: Vec2) -> Self {
         Self {
             position,
-            old_position: position,
+            last_position: position,
             acceleration: Vec2::ZERO,
             friction: FRICTION,
+            radius: ROPE_BALL_RADIUS,
+            color: ROPE_COLOR,
         }
     }
 
     fn update(&mut self) {
-        let mut velocity = self.position - self.old_position;
+        let mut velocity = self.position - self.last_position;
         velocity *= self.friction; // Apply friction to the velocity
-        self.old_position = self.position;
-        self.position += velocity; // + self.acceleration * TIME_STEP * TIME_STEP;
+        self.last_position = self.position;
+        self.position += velocity;
         self.acceleration = Vec2::ZERO; // Reset acceleration
     }
 }
 
-struct Rope {
-    particles: Vec<Particle>,
-    thickness: f32,
-    ball_radius: f32,
+#[derive(Component)]
+struct RopeParameters {
+    num_particles: usize,
+    segment_length: f32,
+    constraint_iterations: usize,
     constraint_strength: f32,
 }
 
-impl Rope {
-    fn new(start: Vec2, num_particles: usize) -> Self {
-        let mut particles = Vec::with_capacity(num_particles);
-        for i in 0..num_particles {
-            particles.push(Particle::new(start + vec2(i as f32 * SEGMENT_LENGTH, 0.0)));
-            particles[i].friction = ROPE_FRICTION;
-        }
-        Self {
-            particles,
-            thickness: ROPE_THICKNESS,
-            ball_radius: ROPE_BALL_RADIUS,
-            constraint_strength: CONSTRAINT_STRENGTH,
-        }
-    }
+#[derive(Component)]
+struct Rope {
+    particles: Vec<Particle>,
+    parameters: RopeParameters,
+}
 
+impl Rope {
     fn update(&mut self, target: Vec2) {
         self.particles[0].position = target;
-        for _ in 0..CONSTRAINT_ITERATIONS {
+        for _ in 0..self.parameters.constraint_iterations {
             for i in 0..self.particles.len() - 1 {
                 let particle_a = self.particles[i];
                 let particle_b = self.particles[i + 1];
                 let delta = particle_b.position - particle_a.position;
                 let delta_length = delta.length();
-                let diff = (delta_length - SEGMENT_LENGTH) / delta_length;
-                let offset = delta * diff * self.constraint_strength / SUBSTEPS as f32;
+                let diff = (delta_length - self.parameters.segment_length) / delta_length;
+                let offset = delta * diff * self.parameters.constraint_strength / SUBSTEPS as f32;
 
                 if i != 0 {
                     self.particles[i].position += offset;
@@ -172,382 +149,153 @@ impl Rope {
         }
 
         for i in 1..self.particles.len() {
-            self.particles[i].update();
+            let mut velocity = self.particles[i].position - self.particles[i].last_position;
+            velocity *= self.particles[i].friction; // Apply friction to the velocity
+            self.particles[i].last_position = self.particles[i].position;
+            self.particles[i].position += velocity; // + self.particles[i].acceleration * TIME_STEP * TIME_STEP;
+            self.particles[i].acceleration = Vec2::ZERO; // Reset acceleration
         }
-    }
-
-    fn draw(&self) {
-        for i in 0..self.particles.len() - 1 {
-            draw_line(
-                self.particles[i].position.x,
-                self.particles[i].position.y,
-                self.particles[i + 1].position.x,
-                self.particles[i + 1].position.y,
-                self.thickness,
-                WHITE,
-            );
-        }
-        draw_circle(
-            self.particles[0].position.x,
-            self.particles[0].position.y,
-            self.ball_radius,
-            WHITE,
-        );
-        draw_circle(
-            self.particles[self.particles.len() - 1].position.x,
-            self.particles[self.particles.len() - 1].position.y,
-            self.ball_radius,
-            WHITE,
-        );
     }
 }
 
-struct Enemy {
-    particle: Particle,
-    active: bool,
-    radius: f32,
+#[derive(Component)]
+struct Player;
+
+#[derive(Bundle)]
+struct PlayerBundle {
+    sprite: SpriteBundle,
+    rope: Rope,
+    player: Player,
 }
 
-impl Enemy {
-    fn new(frame: Frame, target: Vec2) -> Self {
-        let spawn_x = if rand::gen_range(0.0, 1.0) > 0.5 {
-            gen_range(target.x - frame.width / 2.0, target.x)
-        } else {
-            gen_range(target.x, target.x + frame.width / 2.0)
-        };
-
-        let spawn_y = if rand::gen_range(0.0, 1.0) > 0.5 {
-            gen_range(target.y - frame.height / 2.0, target.y)
-        } else {
-            gen_range(target.y, target.y + frame.height / 2.0)
-        };
-
+impl PlayerBundle {
+    fn new(start: Vec2) -> Self {
+        let mut particles = Vec::with_capacity(NUM_PARTICLES);
+        for i in 0..NUM_PARTICLES {
+            particles.push(Particle::new(start + vec2(i as f32 * SEGMENT_LENGTH, 0.0)));
+            particles[i].friction = ROPE_FRICTION;
+        }
         Self {
-            particle: Particle::new(Vec2::new(spawn_x, spawn_y)),
-            active: true,
-            radius: ENEMY_RADIUS,
-        }
-    }
-
-    fn update(&mut self, target: Vec2, frame: Frame) {
-        let direction = target - self.particle.position;
-        let distance = direction.length();
-        if distance > 0.0 {
-            let step = direction.normalize() * ENEMY_SPEED * TIME_STEP;
-            self.particle.position += step;
-        }
-        self.particle.update();
-    }
-
-    fn draw(&self) {
-        if self.active {
-            draw_circle(
-                self.particle.position.x,
-                self.particle.position.y,
-                self.radius,
-                ROPE_COLOR,
-            );
+            sprite: SpriteBundle {
+                sprite: Sprite {
+                    color: ROPE_COLOR,
+                    custom_size: Some(Vec2::new(ROPE_BALL_RADIUS * 2.0, ROPE_BALL_RADIUS * 2.0)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            rope: Rope {
+                particles,
+                parameters: RopeParameters {
+                    num_particles: NUM_PARTICLES,
+                    segment_length: SEGMENT_LENGTH,
+                    constraint_iterations: CONSTRAINT_ITERATIONS,
+                    constraint_strength: CONSTRAINT_STRENGTH,
+                },
+            },
+            player: Player,
         }
     }
 }
-
-struct Point {
-    position: Vec2,
-    active: bool,
-    radius: f32,
-}
-
-impl Point {
-    fn new(frame: Frame, target: Vec2) -> Self {
-        let pos = Vec2::new(
-            gen_range(target.x - frame.width / 2.0, target.x + frame.width / 2.0),
-            gen_range(target.y - frame.height / 2.0, target.y + frame.height / 2.0),
-        );
-        Self {
-            position: pos,
-            active: true,
-            radius: POINT_RADIUS,
-        }
-    }
-
-    fn draw(&self) {
-        if self.active {
-            draw_circle(
-                self.position.x,
-                self.position.y,
-                self.radius,
-                Color::new(1.0, 0.8, 0.0, 1.0),
-            );
-        }
-    }
-}
-
-fn check_collisions(
-    rope: &mut Rope,
-    enemies: &mut [Enemy],
-    points: &mut Vec<Point>,
-    score: &mut i32,
-    game_over: &mut bool, // Pass by mutable reference
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for _ in 0..SUBSTEPS {
-        let particle_0 = rope.particles[0].clone();
-        for particle in rope.particles.iter_mut() {
-            check_enemy_collisions_with_particle(particle, enemies, game_over, particle_0.position);
-            check_point_collisions_with_particle(particle, points, score);
-        }
+    // Spawn the camera
+    let camera_entity = commands.spawn(Camera2dBundle::default()).id();
+
+    // Initialize the rope at the camera's initial position
+    let camera_start_position = Vec2::new(0., 0.);
+    let player_entity = commands
+        .spawn(PlayerBundle::new(camera_start_position))
+        .id();
+
+    // Store the camera entity for future reference
+    commands.insert_resource(CameraEntity {
+        entity: camera_entity,
+    });
+
+    // Store player entity for future reference
+    commands.insert_resource(PlayerEntity {
+        entity: player_entity,
+    });
+
+    // Spawn particles as separate entities
+    let mut particle_entities = Vec::new();
+    for i in 0..NUM_PARTICLES {
+        let entity = commands
+            .spawn(MaterialMesh2dBundle {
+                mesh: Mesh2dHandle(meshes.add(Circle {
+                    radius: ROPE_BALL_RADIUS,
+                })),
+                material: materials.add(ROPE_COLOR),
+                transform: Transform::from_translation(Vec3::new(
+                    i as f32 * SEGMENT_LENGTH,
+                    0.0,
+                    0.0,
+                )),
+                ..Default::default()
+            })
+            .id();
+        particle_entities.push(entity);
     }
+
+    commands.insert_resource(ParticleEntities(particle_entities));
 }
 
-fn check_enemy_collisions_with_particle(
-    particle: &mut Particle,
-    enemies: &mut [Enemy],
-    game_over: &mut bool,
-    player_position: Vec2,
+fn camera_controller(
+    mut mousebtn_evr: EventReader<MouseButtonInput>,
+    mut mousemv_evr: EventReader<MouseMotion>,
+    mut query: Query<&mut Transform, With<Camera>>,
 ) {
-    for enemy in enemies.iter_mut() {
-        let dist = enemy.particle.position - particle.position;
-        let len = dist.length();
-        if len < ROPE_BALL_RADIUS + ENEMY_RADIUS {
-            let offset = (ROPE_BALL_RADIUS + ENEMY_RADIUS - len) * dist.normalize();
-            enemy.particle.position += offset * 0.5;
-            particle.position -= offset * 0.5;
-            if particle.position == player_position {
-                *game_over = true; // Dereference and modify the original game_over
+    // Track if the left mouse button is pressed
+    static mut IS_PRESSED: bool = false;
+
+    // Handle mouse button events
+    for ev in mousebtn_evr.read() {
+        if ev.button == MouseButton::Left {
+            unsafe {
+                IS_PRESSED = ev.state == ButtonState::Pressed;
             }
         }
     }
-}
 
-fn check_point_collisions_with_particle(
-    particle: &mut Particle,
-    points: &mut Vec<Point>,
-    score: &mut i32,
-) {
-    for point in points.iter_mut() {
-        let dist = point.position - particle.position;
-        let len = dist.length();
-        if len < POINT_RADIUS + ENEMY_RADIUS {
-            point.active = false;
-            *score += 1;
-        }
-    }
-}
-
-fn check_enemy_collisions(enemies: &mut [Enemy]) {
-    for i in 0..enemies.len() {
-        for j in (i + 1)..enemies.len() {
-            let dist = enemies[j].particle.position - enemies[i].particle.position;
-            let len = dist.length();
-            if len < ENEMY_RADIUS * 2.0 {
-                let offset = (ENEMY_RADIUS * 2.0 - len) * dist.normalize();
-                enemies[i].particle.position -= offset * 0.5;
-                enemies[j].particle.position += offset * 0.5;
-            }
-        }
-    }
-}
-
-fn draw_ring(rope: &Rope) {
-    let center = rope.particles[0].position;
-    let radius = 200.0; // Adjust the radius as needed
-    let color = Color::new(1.0, 1.0, 1.0, 0.5); // Adjust the color and alpha as needed
-    draw_circle_lines(center.x, center.y, radius, 2.0, color); // Adjust the line thickness as needed
-}
-
-fn is_in_frame(particle: &Particle, frame: Frame) -> bool {
-    let x = particle.position.x;
-    let y = particle.position.y;
-    x >= (screen_width() - frame.width) / 2.
-        && x <= (screen_width() + frame.width) / 2.
-        && y >= (screen_height() - frame.height) / 2.
-        && y <= (screen_height() + frame.height) / 2.
-}
-
-#[macroquad::main(window_conf)]
-async fn main() {
-    let mut game_over = false;
-    let mut rope = Rope::new(vec2(0.0, 100.0), 10);
-    let mut enemies: Vec<Enemy> = Vec::new();
-    let mut points: Vec<Point> = Vec::new();
-    let mut last_spawn_time = get_time();
-    let mut last_point_spawn_time = get_time();
-    let mut score = 0;
-    let mut frame = Frame::new();
-    let mut target = Vec2::ZERO;
-    let mut last_target = Vec2::ZERO; // Track the last target position
-    let mut camera_target = Vec2::ZERO;
-    let mut start_drag_position = Vec2::ZERO;
-
-    // let mut fps_counter = FpsCounter::new();
-
-    let canvas = render_target(CANVAS_WIDTH as u32, CANVAS_HEIGHT as u32);
-    canvas.texture.set_filter(FilterMode::Nearest);
-
-    loop {
-        // fps_counter.update();
-        // fps_counter.draw();
-        frame.update();
-
-        // camera_target = update_camera(frame, target);
-        camera_target = camera_target.lerp(target, 0.1);
-
-        set_camera(&Camera2D {
-            target: camera_target,
-            render_target: Some(canvas.clone()), // Clone the canvas to avoid move error
-            zoom: Vec2::new(CANVAS_HEIGHT / CANVAS_WIDTH, 1.0) * 0.003,
-            ..Default::default()
-        });
-
-        clear_background(BLACK);
-        if game_over {
-            // Handle game over screen
-            clear_background(BLACK);
-            set_default_camera();
-
-            // Draw the canvas to the screen
-            draw_texture(
-                &canvas.texture,
-                (screen_width() - CANVAS_WIDTH) / 2.0,
-                (screen_height() - CANVAS_HEIGHT) / 2.0,
-                WHITE,
-            );
-            draw_text(
-                &format!("Game Over!"),
-                CANVAS_WIDTH / 2. - 85.,
-                CANVAS_HEIGHT / 2. - 50.,
-                40.,
-                WHITE,
-            );
-            draw_text(
-                &format!("Your score is: {}", score),
-                CANVAS_WIDTH / 2. - 140.,
-                CANVAS_HEIGHT / 2. - 20.,
-                40.,
-                WHITE,
-            );
-            if is_mouse_button_pressed(MouseButton::Left) {
-                let mouse_position: Vec2 = mouse_position().into();
-                if mouse_position.x >= CANVAS_WIDTH / 2. - 100.
-                    && mouse_position.x <= CANVAS_WIDTH / 2. + 100.
-                    && mouse_position.y >= CANVAS_HEIGHT / 2.
-                    && mouse_position.y <= CANVAS_HEIGHT / 2. + 50.
-                {
-                    // Reset the game
-                    game_over = false;
-                    rope = Rope::new(vec2(0.0, 100.0), 10);
-                    enemies.clear();
-                    points.clear();
-                    score = 0;
-                    last_spawn_time = get_time();
-                    last_point_spawn_time = get_time();
+    // Handle mouse motion events
+    for ev in mousemv_evr.read() {
+        unsafe {
+            if IS_PRESSED {
+                for mut transform in query.iter_mut() {
+                    transform.translation.x -= ev.delta.x * DRAG_SENSITIVITY;
+                    transform.translation.y += ev.delta.y * DRAG_SENSITIVITY;
                 }
             }
-
-            // Draw replay button
-            draw_rectangle(
-                CANVAS_WIDTH / 2. - 100.,
-                CANVAS_HEIGHT / 2.,
-                200.,
-                50.,
-                BLUE,
-            );
-            draw_text(
-                "Replay",
-                CANVAS_WIDTH / 2. - 50.,
-                CANVAS_HEIGHT / 2. + 30.,
-                30.,
-                WHITE,
-            );
-
-            next_frame().await;
-            continue;
         }
+    }
+}
 
-        let mouse_position: Vec2 = mouse_position().into();
-        if is_mouse_button_down(MouseButton::Left) {
-            if !frame.mouse_held {
-                start_drag_position = mouse_position;
-                last_target = target;
+fn update_rope_particles(
+    mut param_set: ParamSet<(Query<&mut Transform>, Query<&Transform, With<Camera>>)>,
+    mut player_query: Query<&mut Rope>,
+    particle_entities: Res<ParticleEntities>,
+    time: Res<Time>,
+) {
+    if let Some(camera_transform) = param_set.p1().iter().next() {
+        let camera_position = camera_transform.translation.truncate();
+        for mut rope in player_query.iter_mut() {
+            let target_position = rope.particles[0]
+                .position
+                .lerp(camera_position, LERP_FACTOR);
+            rope.update(target_position); // Update rope particles based on target position
+
+            // Update the transform of each particle entity
+            for (i, particle) in rope.particles.iter().enumerate() {
+                if let Ok(mut transform) = param_set.p0().get_mut(particle_entities.0[i]) {
+                    transform.translation.x = particle.position.x;
+                    transform.translation.y = particle.position.y;
+                    // Optionally update other components or systems based on particle state
+                }
             }
-            frame.mouse_held = true;
-
-            // Calculate the drag vector relative to start_drag_position
-            let drag_vector = (mouse_position - start_drag_position) * DRAG_SENSITIVITY;
-
-            // Update target based on drag direction and magnitude relative to last_target
-            target = last_target + drag_vector;
-
-            // Smoothly move target towards last_target using LERP
-            target += (last_target - target) * LERP_FACTOR;
-        } else {
-            frame.mouse_held = false;
         }
-
-        for _ in 0..SUBSTEPS {
-            rope.update(target);
-            check_collisions(
-                &mut rope,
-                &mut enemies,
-                &mut points,
-                &mut score,
-                &mut game_over,
-            );
-            check_enemy_collisions(&mut enemies);
-        }
-
-        if get_time() - last_spawn_time >= ENEMY_SPAWN_INTERVAL as f64 {
-            enemies.push(Enemy::new(frame, target));
-            last_spawn_time = get_time();
-        }
-
-        if get_time() - last_point_spawn_time >= POINT_SPAWN_INTERVAL as f64
-            && points.len() < MAX_POINTS
-        {
-            points.push(Point::new(frame, target));
-            last_point_spawn_time = get_time();
-        }
-
-        for enemy in &mut enemies {
-            enemy.update(rope.particles[0].position, frame);
-        }
-
-        for enemy in &mut enemies {
-            enemy.particle.update();
-        }
-
-        points.retain(|point| point.active);
-        enemies.retain(|enemy| enemy.active);
-
-        rope.draw();
-
-        for enemy in &enemies {
-            enemy.draw();
-        }
-
-        for point in &points {
-            point.draw();
-        }
-        set_default_camera();
-
-        // Draw the canvas to the screen
-        draw_texture(
-            &canvas.texture,
-            (screen_width() - CANVAS_WIDTH) / 2.0,
-            (screen_height() - CANVAS_HEIGHT) / 2.0,
-            WHITE,
-        );
-
-        draw_text(&format!("Score: {}", score), 20.0, 20.0, 30.0, WHITE);
-
-        draw_rectangle_lines(
-            (screen_width() - CANVAS_WIDTH) / 2.0,
-            (screen_height() - CANVAS_HEIGHT) / 2.0,
-            frame.width,
-            frame.height,
-            BORDER_THICKNESS,
-            BORDER_COLOR,
-        );
-
-        next_frame().await;
     }
 }
